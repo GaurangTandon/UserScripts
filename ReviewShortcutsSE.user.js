@@ -1,23 +1,46 @@
 // ==UserScript==
-// @name         Review queue shortcuts for Stack Exchange
-// @description  better version of CloseVoteShortcuts that also works on all SE sites as well as in all other queus (edit/reopen/etc.)
-// @version      0.1
+// @name         Review shortcuts for Stack Exchange
+// @description  better version of CloseVoteShortcuts that also works on all SE sites as well as in all other queus (edit/reopen/etc. )
+// @version      1.0.0
 // @author       Gaurang Tandon
-// @match        *://stackoverflow.com/review/*
-// @match        *://*.stackexchange.com/review/*
+// @match        *://*.askubuntu.com/*
+// @match        *://*.mathoverflow.net/*
+// @match        *://*.serverfault.com/*
+// @match        *://*.stackapps.com/*
+// @match        *://*.stackexchange.com/*
+// @match        *://*.stackoverflow.com/*
+// @match        *://*.superuser.com/*
+// @exclude      *://chat.stackexchange.com/*
+// @exclude      *://chat.stackoverflow.com/*
+// @exclude      *://api.stackexchange.com/*
+// @exclude      *://blog.stackexchange.com/*
+// @exclude      *://blog.stackoverflow.com/*
+// @exclude      *://data.stackexchange.com/*
+// @exclude      *://elections.stackexchange.com/*
+// @exclude      *://openid.stackexchange.com/*
+// @exclude      *://stackexchange.com/*
 // @grant        none
 // ==/UserScript==
+
+/*
+ISSUES:
+2. doesn't work on the close dialog in normal SE webpages
+*/
 
 (function() {
     'use strict';
 
-    function $(selector){
-        var elms = document.querySelectorAll(selector), elm, len = elms.length;
+    function q(selector){
+        var elms = document.querySelectorAll(selector),
+            elm,
+            len = elms.length;
 
 		// cannot always return a NodeList/Array
 		// as properties like firstChild, lastChild will only be able
 		// to be accessed by elms[0].lastChild which is too cumbersome
-        if(len === 0) return null;
+        if(len === 0) {
+            return null;
+        }
 		else if (len === 1) {
 			elm = elms[0];
 			// so that I can access the length of the returned
@@ -25,116 +48,69 @@
 			elm.length = 1;
 			return elm;
 		}
-		else return elms;
+		else {
+            return elms;
+        }
+    }
+
+    function qID(id){
+        return document.getElementById(id);
     }
 
     function hasClass(node, className){
-        return node.className && new RegExp("(^|\\s)" + className + "(\\s|$)").test(node.className);
+        return node.classList.contains(className);
     }
 
     function forEach(nodeList, fn){
-        var i = 0, len = nodeList.length;
+        var i = 0,
+            len = nodeList.length;
 
         for(; i < len; i++){
             fn.call(this, nodeList[i]);
         }
     }
 
-    function invokeClick(element){
-        var clickEvent = new MouseEvent("click", {
-            "view": window,
-            "bubbles": true,
-            "cancelable": false
-        });
+    function throttle(fn, countMax, time){
+        var counter = 0;
 
-        element.dispatchEvent(clickEvent);
+        setInterval(function(){ counter = 0; }, time);
+
+        return function(){
+            if(counter < countMax) {
+                counter++;
+                fn.apply(this, arguments);
+            }
+        };
     }
 
-    var PROCESSED_CLASS = "cv-key-processed", isPopupOpen = false, currentPopup, popupTitle = "";
+    var PROCESSED_CLASS = "cv-key-processed",
+        isPopupOpen = false,
+        currentPopup,
+        popupTitle = "",
+        isReviewQueuePage = /\/review/.test(window.location.href);
 
     // I wouldn't need this if I can dynamically detect whether a popup is open or not
     // turns out all types of popups have different IDs
-    // so I just need to make a hardcoded list of all of them
-    // Suggested Edits/Close/Recmnd Deletion/Unsalvageable (Triage)
     // interestingly, when these popups are not shown, they are entirely removed from the DOM (not hidden via CSS)
-    // (exception: Unsalvageable(Triage) flagging then closure)
+    // (exception: Unsalvageable (Triage) flagging then closure, hidden by style="display:none;")
 
-    var POPUP_IDS = {
-        rejectEdit: "rejection-popup",
-        closeQuestion: "popup-close-question",
-        recommendDeletion: "delete-question-popup",
-        flag: "popup-flag-post"
-    };
-
-    function id(idName){
-        return "#" + idName;
-    }
-
-
+    // The various POPUP_IDs are:
+    // rejectEdit: "rejection-popup", closeQuestion: "popup-close-question", recommendDeletion: "delete-question-popup", flag: "popup-flag-post"
+    // The following method relies on the (hardcoded?) fact that the visible popup
+    // would definitely be a "div.popup[id*="popup"]" with its "style.display" not set to none
     function getVisiblePopup(){
-        var popup = null;
+        var popupsInDOM = document.querySelectorAll("div.popup[id*='popup']") || [];
 
-        for(var key in POPUP_IDS)
-            if(POPUP_IDS.hasOwnProperty(key)){
-                popup = $(id(POPUP_IDS[key]));
-                if(!popup) continue;
+        for(var i = 0, len = popupsInDOM.length, popup; i < len; i++){
+            popup = popupsInDOM[i];
 
-                // pressing "should be closed..." in flagging dialog
-                // opens the close dialog and does "display:none;" to the flag dialog
-                // (so that both popups are in the DOM at once)
-                // and also vice-versa
-                if(popup.style && popup.style.display === "none")
-                    continue;
-
+            if(!(popup.style && popup.style.display === "none")){
                 return popup;
             }
+        }
 
         return null;
-
-
-        if(popup.id === POPUP_IDS.flagDialog)
-            if(popup.style && popup.style.display === "none")
-                return $("#" + POPUP_IDS.closeQuestion);
-
-        return popup;
     }
-
-    /* Steps:
-    1. find all buttons on a review page (under `span.review-actions`)
-    2. assign them keyboard shortcuts
-    3. look for cases
-    TREES OF SUPPORT:
-    (these are just for indication but should NOT be hardcoded
-      into the script. this is the entire reason why I'm writing this script,
-      to avoid hardcoding)
-    CLOSE -
-     - duplicate
-     - off topic
-       - several reasons
-       - migration
-         - several sites
-       - custom
-     - unclear what you're asking
-     - too broad
-     - primarily opinion based
-     EDIT-
-      - Approve
-      - Improve Edit
-      - Reject and Edit
-      - Reject
-        - four normal reasons
-        - fifth custom reason
-      - Skip
-      LQP -
-       - Looks OK
-       - Edit
-       - Recmnd deletion
-        - several other options
-       - Skip
-      I guess this tree is enough. My code should be
-      intelligent enough to work on all queues (hopefully?)
-      for that it would also need to detect when a modal opens automatically
-    */
 
     // for review actions, tacking on a .processed class doesn't work
     // because that class persists when you move from one review item to another
@@ -144,9 +120,11 @@
     }
 
     function setReviewActionKeys(){
-        var actions = $(".review-actions");
+        var actions = q(".review-actions");
 
-        if(hasActionsBeenProcessed(actions)) return;
+        if(hasActionsBeenProcessed(actions)) {
+            return;
+        }
 
         var key = 1;
         forEach(actions.children, function(button){
@@ -154,10 +132,9 @@
             key++;
         });
         actions.classList.add(PROCESSED_CLASS);
-
     }
 
-    // actually there's more than one `.action-list`, one for every list
+    // there's more than one `.action-list`, one for every parent pane
     // I need to determine which `.action-list` is visible at the moment
     function getVisibleActionList(){
         // only queues with more than one pane have the `.popup-active-pane` set
@@ -166,9 +143,18 @@
     }
 
     function setPopupKeys(){
-        var actionList = getVisibleActionList(), key = 1, span;
+        var actionList = getVisibleActionList(),
+            key = 1,
+            span;
 
-        if(hasClass(actionList, PROCESSED_CLASS)) return;
+        if(!actionList || hasClass(actionList, PROCESSED_CLASS)) {
+            return;
+        }
+
+        // in the LQP queue, the first option is selected by default
+        // however, pressing the Enter key doesn't submit the popup
+        // as the input element of the selection action is not focused
+        var preSelectedActionInput = actionList.querySelector(".action-selected input");
 
         forEach(actionList.children, function(li){
             span = li.querySelector(".action-name");
@@ -176,31 +162,56 @@
             key++;
         });
         actionList.classList.add(PROCESSED_CLASS);
+
+        if(preSelectedActionInput){
+            preSelectedActionInput.focus();
+            preSelectedActionInput.click();
+        }
     }
 
     // for example, go from Closing > Off-Topic > Migration to Closing > Off-Topic
     // on pressing Backspace key
     function backStepPopup(){
+        function exitPopup(){
+            currentPopup.querySelector(".popup-close a").click();
+        }
+
         // you don't have any popup open
-        if(!currentPopup) return;
+        if(!currentPopup) {
+            return;
+        }
 
-        var breadcrumbs = currentPopup.querySelector(".popup-breadcrumbs"),
-            children = breadcrumbs.children, len = children.length;
+        var breadcrumbs = currentPopup.querySelector(".popup-breadcrumbs");
 
-        // you are on the front page
-        if(len === 0) return;
+        // breadcrumbs are missing on the flag dialog
+        if(!breadcrumbs){
+            exitPopup();
+        }
 
-        invokeClick(children[len - 1].querySelector("a"));
+        var children = breadcrumbs.children,
+            len = children.length;
+
+        // you are on the front page, exit popup
+        if(!len) {
+            exitPopup();
+        }
+        else{
+            children[len - 1].querySelector("a").click();
+        }
     }
 
     function onStateChange(){
-        var popup = getVisiblePopup(), titleElm, title = "";
+        var popup = getVisiblePopup(),
+            titleElm,
+            title = "";
 
         if(popup){
             isPopupOpen = true;
             // only in CV queue
             titleElm = popup.querySelector(".popup-title");
-            if(titleElm) title = titleElm.innerHTML;
+            if(titleElm) {
+                title = titleElm.innerHTML;
+            }
 
             if(popup === currentPopup) {
                 if(title != popupTitle){
@@ -213,38 +224,33 @@
             }
         }else{
             isPopupOpen = false;
-            setReviewActionKeys();
+            if(isReviewQueuePage){
+                setReviewActionKeys();
+            }
         }
     }
 
-
     function numKeyHandler(keyCode){
         // starts from 1
-        var num = keyCode - 48, focusedElement, radioBtn, reviewActions = $(".review-actions");
+        var num = keyCode - 48,
+            reviewActions = q(".review-actions"),
+            focusedElement = isPopupOpen ? getVisibleActionList().children[num - 1].querySelector("input") :
+                             reviewActions ? reviewActions.children[num - 1] : null;
 
-        if(isPopupOpen){
-            focusedElement = getVisibleActionList().children[num - 1].querySelector("input");
+        if(focusedElement){
             focusedElement.focus();
-            invokeClick(focusedElement);
-        }else if(reviewActions){
-            // rely on jQuery
-            focusedElement = reviewActions.children[num - 1];
-            focusedElement.focus();
-            invokeClick(focusedElement);
+            focusedElement.click();
         }else{
             console.warn("Possible page reloading");
         }
     }
 
     try{
-        var observer = new MutationObserver(function (mutations) {
-            onStateChange();
-            setReviewActionKeys();
-        });
+        var observer = new MutationObserver(throttle(onStateChange, 1, 250));
 
         // watching #content because #rejection-popup happens to fall outisde .review-content
-        observer.observe($('#content'), { 'childList': true, 'subtree': true });
-        observer.observe($('.review-content'), { 'childList': true, 'subtree': true });
+        observer.observe(qID('content'), { 'childList': true, 'subtree': true });
+        observer.observe(q('.review-content'), { 'childList': true, 'subtree': true });
     }catch(e){
         // when user moving from one review item to another, an error comes up
         // claiming element X is undefined. Don't need to care about that error
@@ -263,21 +269,29 @@
     document.head.appendChild(style);
 
     document.addEventListener('keyup', function (e) {
-        var target = e.target, kC = e.keyCode;
+        var target = e.target,
+            kC = e.keyCode;
 
         // escape
-        if(kC === 27) return;
-
-        // do not register inputs in textareas
-        if((target.tagName === 'INPUT' && target.type === 'text') || target.tagName === 'TEXTAREA') return;
+        if(kC === 27 ||
+          // do not register inputs in textareas
+          (target.tagName === 'INPUT' && target.type === 'text') || target.tagName === 'TEXTAREA') {
+            return;
+        }
 
         // backspace
-        if(kC === 8) backStepPopup();
+        if(kC === 8) {
+            backStepPopup();
+        }
 
         // numpad handling - reset to values in topbar
-        if(kC > 95 && kC < 106) kC -= 48;
+        if(kC > 95 && kC < 106) {
+            kC -= 48;
+        }
 
         // 1 - 9
-        if(kC > 48 && kC < 58) numKeyHandler(kC);
+        if(kC > 48 && kC < 58) {
+            numKeyHandler(kC);
+        }
     });
 })();
