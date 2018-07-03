@@ -1,6 +1,6 @@
 // ==UserScript==
-// @name         Review shortcuts for Stack Exchange
-// @description  better version of CloseVoteShortcuts that also works on all SE sites as well as in all other queus (edit/reopen/etc. )
+// @name         Popup dialog shortcuts for Stack Exchange
+// @description  better version of CloseVoteShortcuts,  works on all SE sites, in all queues (close/reopen/etc.), on all pages (review and non-review)
 // @version      1.0.0
 // @author       Gaurang Tandon
 // @match        *://*.askubuntu.com/*
@@ -30,20 +30,20 @@
             elm,
             len = elms.length;
 
-		// cannot always return a NodeList/Array
-		// as properties like firstChild, lastChild will only be able
-		// to be accessed by elms[0].lastChild which is too cumbersome
+        // cannot always return a NodeList/Array
+        // as properties like firstChild, lastChild will only be able
+        // to be accessed by elms[0].lastChild which is too cumbersome
         if(len === 0) {
             return null;
         }
-		else if (len === 1) {
-			elm = elms[0];
-			// so that I can access the length of the returned
-			// value else length if undefined
-			elm.length = 1;
-			return elm;
-		}
-		else {
+        else if (len === 1) {
+            elm = elms[0];
+            // so that I can access the length of the returned
+            // value else length if undefined
+            elm.length = 1;
+            return elm;
+        }
+        else {
             return elms;
         }
     }
@@ -254,7 +254,7 @@
         // claiming element X is undefined. Don't need to care about that error
     }
 
-    // adding prefixes to button values causes them to overflow to two lines, so avoid that
+    // adding numeric prefixes to button values causes them to overflow to two lines, so avoid that
     var style = document.createElement("style"),
         styles = `
         .review-summary{
@@ -266,7 +266,8 @@
     style.innerHTML = styles;
     document.head.appendChild(style);
 
-    document.addEventListener('keydown', function handleKeyDown(e) {
+    // for some unknown reason, using keydown gives `focusedElement` as undefined in `numKeyHandler`
+    document.addEventListener('keypress', function handleKeyPress(e) {
         var target = e.target,
             kC = e.keyCode;
 
