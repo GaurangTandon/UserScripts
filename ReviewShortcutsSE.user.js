@@ -22,11 +22,6 @@
 // @grant        none
 // ==/UserScript==
 
-/*
-ISSUES:
-2. doesn't work on the close dialog in normal SE webpages
-*/
-
 (function() {
     'use strict';
 
@@ -171,7 +166,7 @@ ISSUES:
 
     // for example, go from Closing > Off-Topic > Migration to Closing > Off-Topic
     // on pressing Backspace key
-    function backStepPopup(){
+    function backStepPopup(event){
         function exitPopup(){
             currentPopup.querySelector(".popup-close a").click();
         }
@@ -180,6 +175,8 @@ ISSUES:
         if(!currentPopup) {
             return;
         }
+
+        event.preventDefault();
 
         var breadcrumbs = currentPopup.querySelector(".popup-breadcrumbs");
 
@@ -230,14 +227,15 @@ ISSUES:
         }
     }
 
-    function numKeyHandler(keyCode){
+    function numKeyHandler(event){
         // starts from 1
-        var num = keyCode - 48,
+        var num = event.keyCode - 48,
             reviewActions = q(".review-actions"),
             focusedElement = isPopupOpen ? getVisibleActionList().children[num - 1].querySelector("input") :
                              reviewActions ? reviewActions.children[num - 1] : null;
 
         if(focusedElement){
+            event.preventDefault();
             focusedElement.focus();
             focusedElement.click();
         }else{
@@ -268,7 +266,7 @@ ISSUES:
     style.innerHTML = styles;
     document.head.appendChild(style);
 
-    document.addEventListener('keyup', function (e) {
+    document.addEventListener('keydown', function handleKeyDown(e) {
         var target = e.target,
             kC = e.keyCode;
 
@@ -281,7 +279,7 @@ ISSUES:
 
         // backspace
         if(kC === 8) {
-            backStepPopup();
+            backStepPopup(e);
         }
 
         // numpad handling - reset to values in topbar
@@ -291,7 +289,7 @@ ISSUES:
 
         // 1 - 9
         if(kC > 48 && kC < 58) {
-            numKeyHandler(kC);
+            numKeyHandler(e);
         }
     });
 })();
